@@ -19,6 +19,7 @@ import gala.dynamics as gd
 #from gala.units import galactic
 import pandas as pd
 from astropy.io import ascii
+import matplotlib as mpl
 
 
 
@@ -111,9 +112,10 @@ def compute_actions(pos, plot_all_orbit=False, alpha=1., print_pericenter=False)
                                               t2=2.5*u.Gyr)
     #plot 
     orbit_to_plot=orbit[:,0]
-    if plot_all_orbit: orbit_to_plot=orbit
-    oplot=orbit_to_plot.cylindrical.plot( components=['rho', 'z', 'v_z'],  \
-                                      units=[u.pc, u.pc, u.km/u.s] ,alpha=alpha, c='#0074D9')
+    oplot=None
+    if plot_all_orbit: 
+        orbit_to_plot=orbit
+        oplot=orbit_to_plot.cylindrical.plot( components=['rho', 'z', 'v_z'],  units=[u.pc, u.pc, u.km/u.s] ,alpha=alpha, c='#0074D9')
     #documentation: http://gala.adrian.pw/en/latest/dynamics/actionangle.html
     toy_potential = gd.fit_isochrone(orbit[:,0])
     print (toy_potential)
@@ -173,6 +175,10 @@ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, plot=False,
 
    	#if use jz
     total_cut=[]
+    data['v_x']=data_coord.transform_to(galcen_frame).v_x.value
+    data['v_y']=data_coord.transform_to(galcen_frame).v_y.value
+    data['v_z']=data_coord.transform_to(galcen_frame).v_z.value
+
     if use_jz:
         data_res=compute_actions(data_pos, plot_all_orbit=False)
         data_actions=np.vstack(data_res[0]['actions'].apply(lambda x: np.array(x)).values)
@@ -183,9 +189,6 @@ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, plot=False,
         data['Jr']=data_actions[:,0]*1000 #units (kpc$^2$/Gyr)
         data['Jphi']=data_actions[:,1]*1000 
         data['Jz']=data_actions[:,2]*1000
-        data['v_x']=data_coord.transform_to(galcen_frame).v_x.value
-        data['v_y']=data_coord.transform_to(galcen_frame).v_y.value
-        data['v_z']=data_coord.transform_to(galcen_frame).v_z.value
 
 		#idem for the source
         source_res=compute_actions(source_pos, plot_all_orbit=False, alpha=1.)
@@ -195,7 +198,9 @@ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, plot=False,
    		#forget about angles and frequencies
 
    		#compute boolean vertical_actions within uncertainties
-        jz_cut= np.logical_and( (data.Jz-mean_source_jz[0]) < nsigma* std_source_jz[-1])
+
+        jz_cut= np.logical_and(data.Jz < mean_source_jz+ nsigma* std_source_jz, \
+        	data.Jz > mean_source_jz- nsigma* std_source_jz)
         total_cut.append(jz_cut)
 
    	#kinematics, metallicity cuts
@@ -232,6 +237,42 @@ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, plot=False,
         plt.legend()
         ax.minorticks_on()
         plt.savefig(file_plot)
+
+        #print(data.columns)
+        
+        fig, ax=plt.subplots(ncols=2, figsize=(12, 4))
+        ax[0].scatter((data.v_x**2+data.v_y**2)**0.5, data.v_z, s=150,  c=data.age1, \
+		              marker='+', alpha=.8, cmap='viridis_r', vmin=0, vmax=13)
+            
+        ax[1].scatter(data['[Fe/H]'],  data.v_z, s=150,  c=data.age1, \
+		              marker='+', alpha=.8, cmap='viridis_r', vmin=0, vmax=13)
+            
+            
+        vr= ((source_coord.transform_to(galcen_frame).v_x**2+
+            source_coord.transform_to(galcen_frame).v_y**2)**0.5).value
+             
+        vz=(source_coord.transform_to(galcen_frame).v_z).value
+
+        #print (vz, vr)
+        
+        ax[0].errorbar(np.nanmedian(vr), np.nanmedian(vz), xerr=np.nanstd(vr), yerr=np.nanstd(vz), fmt='o', ms=15, c='k')
+        
+        ax[1].errorbar(source_metal[0], np.nanmedian(vz), xerr=source_metal[-1],\
+		           yerr=np.nanstd(vz), marker='o', ms=15, c='k')
+            
+            
+        ax[0].set(xlabel=r'$(V_x^2+v_y^2)^{0.5}$ (km/s) ', ylabel=r'$V_z$ (km/s)')
+        ax[1].set(  xlabel='[Fe/H]', \
+		       ylabel=r'V$_z$ (km/s) ')
+        
+        norm= mpl.colors.Normalize(vmin=0,vmax=13)
+        mp=mpl.cm.ScalarMappable(norm=norm, cmap='viridis_r')
+        cax = fig.add_axes([1.01, 0.25, .015, 0.7])
+        cbar=plt.colorbar(mp, cax=cax, orientation='vertical')
+        cbar.ax.set_ylabel(r'Age (Gyr)', fontsize=18)
+        plt.tight_layout()
+        for a in ax: a.minorticks_on()
+        plt.savefig(file_plot.replace('.', '_scatter_'), rasterized=True, bbox_inches='tight')
 
     return {'median_age':MEDIAN_AGE,
 			'std_age': (MEDIAN_AGE-STD_AGE[0], STD_AGE[1]-MEDIAN_AGE),
