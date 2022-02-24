@@ -73,7 +73,7 @@ def load_samples():
 	comb=pd.concat([bensby, luck, spocs, casgr.rename(columns={'ageMP':'age1'})])
 	return comb
 	                
-	         
+
 
 def get_phase_space(ra, dec, pmracosdec, pmdec, distance, rv ):
 	#get phase space position of an object in our coordinate frame
@@ -119,7 +119,7 @@ def compute_actions(pos, plot_all_orbit=False, alpha=1., print_pericenter=False)
     return pd.DataFrame.from_records(result), oplot
 
 
- def estimate_age(source_coord, source_metal, use_jz=False, plot=False, file_plot=None, file_data=None, export_data=False):
+ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, plot=False, file_plot=None, file_data=None, export_data=False):
 
  	#source_coord must be a dictionary with the following keywords
  	#ra: ra in degree
@@ -154,6 +154,7 @@ def compute_actions(pos, plot_all_orbit=False, alpha=1., print_pericenter=False)
                        	Scoord['pmdec'], 	Scoord['distance'], Scoord['rv'])
 
    	#if use jz
+   	total_cut=[]
    	if use_jz:
    		#compute stellar orbits, add in option to load pre-computed orbits
    		data_res=compute_actions(data_pos, plot_all_orbit=False)
@@ -177,10 +178,43 @@ def compute_actions(pos, plot_all_orbit=False, alpha=1., print_pericenter=False)
 		#idem for the source
    		source_res=compute_actions(source_pos, plot_all_orbit=True, alpha=1.)
    		source_actions=np.vstack(source_res[0]['actions'].apply(lambda x: np.array(x)).values)
+   		mean_source_jz= np.nanmedian(source_actions[:,-1])
+   		std_source_jz= np.nanstd(source_actions[:,-1])
    		#forget about angles and frequencies
 
    		#compute boolean vertical_actions within uncertainties
-   		angle_cut=  abs(comb_r.Jz)< 1
+   		jz_cut= np.logical_and( (comb_r.Jz-mean_source_jz[0]) < nsigma* std_source_jz[-1])
+   		total_cut.append(jz_cut)
+
+   	#kinematics, metallicity cuts
+
+   	#total velocity of the source
+   	source_total_v=(source_coord.transform_to(galcen_frame).v_x**2+
+            source_coord.transform_to(galcen_frame).v_y**2+
+                source_coord.transform_to(galcen_frame).v_z**2)**0.5
+
+   	#compute only kinematics within the velocity ellipse of the star 
+	kinematic_cut=comb_r.vtot < (np.nanmedian(source_coord).value + nsigma*np.nanmedian(source_coord).value)
+	total_cut.append(kinematic_cut)
+
+	#metallicity within n-sigma
+	metallicity_cut= np.logical_and(data['[Fe/H]'] > source_metal[0]-nsigma*source_metal[-1],
+									data['[Fe/H]'] < source_metal[0]+nsigma*source_metal[-1])
+	total_cut.append(metallicity_cut)
+
+	#selection
+	selection= np.logical_and.reduce(total_cut)
+
+	MEDIAN_AGE=np.nanmedian(data.age1[selection])
+	STD_AGE=[np.percentile(data.age1[selection], 16), \
+	         np.percentile(data.age1[selection], 84)]
+
+	return {'median_age':MEDIAN_AGE,
+			'std_age': STD_AGE,
+			'posterior': data.age1[selection].values }
+
+
+
 
 
 
