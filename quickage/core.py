@@ -188,7 +188,7 @@ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, plot=False,
         data['v_z']=data_coord.transform_to(galcen_frame).v_z.value
 
 		#idem for the source
-        source_res=compute_actions(source_pos, plot_all_orbit=True, alpha=1.)
+        source_res=compute_actions(source_pos, plot_all_orbit=False, alpha=1.)
         source_actions=np.vstack(source_res[0]['actions'].apply(lambda x: np.array(x)).values)
         mean_source_jz= np.nanmedian(source_actions[:,-1])
         std_source_jz= np.nanstd(source_actions[:,-1])
