@@ -118,8 +118,11 @@ def compute_actions(pos, plot_all_orbit=False, alpha=1., print_pericenter=False)
                                                  np.nanstd(u.Quantity(peris))))
     return pd.DataFrame.from_records(result), oplot
 
+def plot_results():
+	pass
 
- def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, plot=False, file_plot=None, file_data=None, export_data=False):
+
+def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, plot=False, file_plot=None, file_data=None, export_data=False):
 
  	#source_coord must be a dictionary with the following keywords
  	#ra: ra in degree
@@ -208,6 +211,8 @@ def compute_actions(pos, plot_all_orbit=False, alpha=1., print_pericenter=False)
 	MEDIAN_AGE=np.nanmedian(data.age1[selection])
 	STD_AGE=[np.percentile(data.age1[selection], 16), \
 	         np.percentile(data.age1[selection], 84)]
+
+
 
 	return {'median_age':MEDIAN_AGE,
 			'std_age': STD_AGE,
