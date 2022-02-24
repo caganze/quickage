@@ -72,7 +72,8 @@ def load_samples():
 
 	comb=pd.concat([bensby, luck, spocs, casgr.rename(columns={'ageMP':'age1'})])
 	return comb
-	                 
+	                
+	         
 
 def get_phase_space(ra, dec, pmracosdec, pmdec, distance, rv ):
 	#get phase space position of an object in our coordinate frame
@@ -118,7 +119,7 @@ def compute_actions(pos, plot_all_orbit=False, alpha=1., print_pericenter=False)
     return pd.DataFrame.from_records(result), oplot
 
 
- def estimate_age(source_coord, source_metal, use_jz=False, plot=False):
+ def estimate_age(source_coord, source_metal, use_jz=False, plot=False, file_plot=None, file_data=None, export_data=False):
 
  	#source_coord must be a dictionary with the following keywords
  	#ra: ra in degree
@@ -133,6 +134,7 @@ def compute_actions(pos, plot_all_orbit=False, alpha=1., print_pericenter=False)
  	#use_jz: keyword to use vertical action as additional constraints
 
  	#returns: age and posterior plots
+ 	#uncertainties must be reasonable, not zero
 
  	Scoord={'ra':source_coord['ra'], \
               'dec': source_coord['dec'],\
@@ -175,7 +177,11 @@ def compute_actions(pos, plot_all_orbit=False, alpha=1., print_pericenter=False)
 		#idem for the source
    		source_res=compute_actions(source_pos, plot_all_orbit=True, alpha=1.)
    		source_actions=np.vstack(source_res[0]['actions'].apply(lambda x: np.array(x)).values)
-   		#forget about angles and other things
+   		#forget about angles and frequencies
+
+   		#compute boolean vertical_actions within uncertainties
+   		angle_cut=  abs(comb_r.Jz)< 1
+
 
 
 
