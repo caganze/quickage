@@ -82,6 +82,17 @@ def load_samples():
 	return comb
 	                
 
+def load_galah_sample():
+    from astropy.table import Table
+    merged_file='/volumes/LaCie/galah_merged.fits'
+    galah= Table.read(merged_file).to_pandas()
+    galah['vtot']= (galah['vx_gala (km/s)']**2+galah['vy_gala (km/s)']**2+galah['vz_gala (km/s)']**2)**0.5
+    return galah.rename(columns={'vx_gala (km/s)': 'v_x', \
+                      'vy_gala (km/s)': 'v_y',  \
+                      'vz_gala (km/s)': 'v_z',
+                     'fe_h': '[Fe/H]', 
+                    'Jz (kpc2/Myr)': 'Jz',
+                    'age_bstep': 'age1'})
 
 def get_phase_space(ra, dec, pmracosdec, pmdec, distance, rv ):
     """
@@ -135,7 +146,7 @@ def plot_results():
 	pass
 
 
-def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, plot=False, file_plot=None, file_data=None, export_data=False):
+def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, use_galah=False, plot=False, file_plot=None, file_data=None, export_data=False):
     """
  	source_coord must be a dictionary with the following keywords
  	ra: ra in degree
@@ -159,6 +170,10 @@ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, plot=False,
               'distance':np.random.normal(source_coord['distance'][0],source_coord['distance'][1], 1000),
               'rv': np.random.normal(source_coord['rv'][0],source_coord['rv'][1], 1000)}
 
+    source_coord, source_pos=get_phase_space(	Scoord['ra'], 	Scoord['dec'],\
+                       	Scoord['pmra']*np.cos(	Scoord['dec']*u.degree), \
+                       	Scoord['pmdec'], 	Scoord['distance'], Scoord['rv'])
+
     #read in data
     data= load_samples()
     data_coord, data_pos=get_phase_space(data.ra_gaia.values, data.de_gaia.values,\
@@ -169,28 +184,25 @@ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, plot=False,
               data_coord.transform_to(galcen_frame).v_y**2+
               data_coord.transform_to(galcen_frame).v_z**2)**0.5).value
 
-    source_coord, source_pos=get_phase_space(	Scoord['ra'], 	Scoord['dec'],\
-                       	Scoord['pmra']*np.cos(	Scoord['dec']*u.degree), \
-                       	Scoord['pmdec'], 	Scoord['distance'], Scoord['rv'])
-
    	#if use jz
     total_cut=[]
     data['v_x']=data_coord.transform_to(galcen_frame).v_x.value
     data['v_y']=data_coord.transform_to(galcen_frame).v_y.value
     data['v_z']=data_coord.transform_to(galcen_frame).v_z.value
 
+    if use_galah: data= load_galah_sample()
+
     if use_jz:
-        data_res=compute_actions(data_pos, plot_all_orbit=False)
-        data_actions=np.vstack(data_res[0]['actions'].apply(lambda x: np.array(x)).values)
+        if not use_galah: #bool to use PRE-COMPUTED GALAH SAMPLE
+	        data_res=compute_actions(data_pos, plot_all_orbit=False)
+	        data_actions=np.vstack(data_res[0]['actions'].apply(lambda x: np.array(x)).values)
 
-   		#don't need
-		#data_angles=np.vstack(data_res[0]['angles'].apply(lambda x: np.array(x)).values)
-		#data_freqs=np.vstack(data_res[0]['freqs'].apply(lambda x: np.array(x)).values)
-        data['Jr']=data_actions[:,0]*1000 #units (kpc$^2$/Gyr)
-        data['Jphi']=data_actions[:,1]*1000 
-        data['Jz']=data_actions[:,2]*1000
-
-		#idem for the source
+	   		#don't need
+			#data_angles=np.vstack(data_res[0]['angles'].apply(lambda x: np.array(x)).values)
+			#data_freqs=np.vstack(data_res[0]['freqs'].apply(lambda x: np.array(x)).values)
+	        data['Jr']=data_actions[:,0]#*1000 #units (kpc$^2$/Myr)
+	        data['Jphi']=data_actions[:,1]#*1000 
+	        data['Jz']=data_actions[:,2]#*1000
         source_res=compute_actions(source_pos, plot_all_orbit=False, alpha=1.)
         source_actions=np.vstack(source_res[0]['actions'].apply(lambda x: np.array(x)).values)
         mean_source_jz= np.nanmedian(source_actions[:,-1])
@@ -198,7 +210,6 @@ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, plot=False,
    		#forget about angles and frequencies
 
    		#compute boolean vertical_actions within uncertainties
-
         jz_cut= np.logical_and(data.Jz < mean_source_jz+ nsigma* std_source_jz, \
         	data.Jz > mean_source_jz- nsigma* std_source_jz)
         total_cut.append(jz_cut)
@@ -211,7 +222,7 @@ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, plot=False,
                 source_coord.transform_to(galcen_frame).v_z**2)**0.5
 
    	#compute only kinematics within the velocity ellipse of the star
-    kinematic_cut=data.vtot < (np.nanmedian(source_total_v).value + nsigma*np.nanmedian(source_total_v).value)
+    kinematic_cut=data.vtot < (np.nanmedian(source_total_v).value)# + nsigma*np.nanmedian(source_total_v).value)
     total_cut.append(kinematic_cut)
 
 	#metallicity within n-sigma
@@ -221,17 +232,18 @@ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, plot=False,
 
 	#selection
     selection= np.logical_and.reduce(total_cut)
-    MEDIAN_AGE=np.nanmedian(data.age1[selection])
-    STD_AGE=[np.percentile(data.age1[selection], 16), \
-	         np.percentile(data.age1[selection], 84)]
+    nans= ~np.isnan(data.age1)
+    MEDIAN_AGE=np.nanmedian(data.age1[np.logical_and(selection, nans)])
+    STD_AGE=[np.percentile(data.age1[selection].dropna(), 16), \
+	         np.percentile(data.age1[selection].dropna(), 84)]
 
     if plot:
         fig, ax=plt.subplots( figsize=(8, 6))
         _=ax.hist(data.age1, histtype='step', bins='auto', lw=2, density=True, \
-		          linestyle='--', color='r')
+		          linestyle='--', color='r', label='Full sample')
         _=ax.hist(data.age1[selection], \
 		              bins='auto', lw=2, density=True, \
-		          linestyle='-', color='k')
+		          linestyle='-', color='k', label='Selected')
         ax.axvspan(STD_AGE[0], STD_AGE[-1], alpha=0.2, color='blue')
         ax.set(xlabel='Age (Gyr)', ylabel='Probability')
         plt.legend()
@@ -241,10 +253,10 @@ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, plot=False,
         #print(data.columns)
         
         fig, ax=plt.subplots(ncols=2, figsize=(12, 4))
-        ax[0].scatter((data.v_x**2+data.v_y**2)**0.5, data.v_z, s=150,  c=data.age1, \
+        ax[0].scatter((data.v_x**2+data.v_y**2)**0.5, data.v_z, s=5, alpha=1000/len(data),  c=data.age1, \
 		              marker='+', alpha=.8, cmap='viridis_r', vmin=0, vmax=13)
             
-        ax[1].scatter(data['[Fe/H]'],  data.v_z, s=150,  c=data.age1, \
+        ax[1].scatter(data['[Fe/H]'],  data.v_z, s=5, s=1000/len(data),  c=data.age1, \
 		              marker='+', alpha=.8, cmap='viridis_r', vmin=0, vmax=13)
             
             
