@@ -45,7 +45,8 @@ pot=gp.MilkyWayPotential()
 H = gp.Hamiltonian(pot)
 
 
-def load_samples():
+def load_schneider_samples():
+    
 	"""
 	Read bensby et al, luck et al, cassagrande et al., spocs
 
@@ -93,6 +94,10 @@ def load_galah_sample():
                      'fe_h': '[Fe/H]', 
                     'Jz (kpc2/Myr)': 'Jz',
                     'age_bstep': 'age1'})
+        
+def load_precompute_samples():
+    
+    return 
 
 def get_phase_space(ra, dec, pmracosdec, pmdec, distance, rv ):
     """
@@ -117,6 +122,8 @@ def compute_actions(pos, plot_all_orbit=False, alpha=1., print_pericenter=False)
 
 	These default settings are used for all the samples, 
 	they sample at least one orbit of the majority of the stars
+    
+    These are the default paramaters that I used to compute actions on the main samples
 
 	"""
     orbit=gp.Hamiltonian(pot).integrate_orbit(pos, dt=3*u.Myr, t1=0*u.Myr, \
@@ -175,7 +182,7 @@ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, use_galah=F
                        	Scoord['pmdec'], 	Scoord['distance'], Scoord['rv'])
 
     #read in data
-    data= load_samples()
+    data= load_schneider_samples()
     data_coord, data_pos=get_phase_space(data.ra_gaia.values, data.de_gaia.values,\
                              data.pmracosdec.values, \
                 data.pmde.values, 1000/data.plx.values, data.rv.values )
@@ -254,10 +261,10 @@ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, use_galah=F
         
         fig, ax=plt.subplots(ncols=2, figsize=(12, 4))
         ax[0].scatter((data.v_x**2+data.v_y**2)**0.5, data.v_z, s=5, alpha=1000/len(data),  c=data.age1, \
-		              marker='+', alpha=.8, cmap='viridis_r', vmin=0, vmax=13)
+		              marker='+',  cmap='viridis_r', vmin=0, vmax=13)
             
-        ax[1].scatter(data['[Fe/H]'],  data.v_z, s=5, s=1000/len(data),  c=data.age1, \
-		              marker='+', alpha=.8, cmap='viridis_r', vmin=0, vmax=13)
+        ax[1].scatter(data['[Fe/H]'],  data.v_z, s=5, alpha=1000/len(data),  c=data.age1, \
+		              marker='+',  cmap='viridis_r', vmin=0, vmax=13)
             
             
         vr= ((source_coord.transform_to(galcen_frame).v_x**2+
