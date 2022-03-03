@@ -21,9 +21,6 @@ import pandas as pd
 from astropy.io import ascii
 import matplotlib as mpl
 
-
-
-
 #set paths
 CODE_PATH = os.path.abspath(os.path.join(
                   os.path.dirname(__file__), 
@@ -31,57 +28,76 @@ CODE_PATH = os.path.abspath(os.path.join(
 )
 DATA_FOLDER= CODE_PATH + '/data/'
 
-
-
 #define a coordinate frame
-#coordinate frame
+#not sure where this system came from ? Sarah's values 
+#I have used this system to compute Jz so can't change it really
 _ = astro_coord.galactocentric_frame_defaults.set('v4.0')
 v_sun = astro_coord.CartesianDifferential([11.1, 220 + 24.0, 7.25]*u.km/u.s)
 galcen_frame =astro_coord.Galactocentric(galcen_distance=8.2*u.kpc,
                                     galcen_v_sun=v_sun)
+
 
 #potential
 pot=gp.MilkyWayPotential()
 H = gp.Hamiltonian(pot)
 
 
-def load_schneider_samples():
-    
-	"""
+def load_schneider_samples(use_jz=False):
+    """
 	Read bensby et al, luck et al, cassagrande et al., spocs
-
-	"""
-
-	bensby=ascii.read(DATA_FOLDER+'/bensby_30pc_gaia1.txt', \
+    
+    """
+    bensby=ascii.read(DATA_FOLDER+'/bensby_30pc_gaia1.txt', \
 	                        names ='ra              de    \
 	                                [Fe/H]       age1     l_age1     u_age1       \
 	                                ra_gaia              de_gaia        plx       eplx    \
 	                                pmra      epmra       pmde      epmde      \
 	                                rv        erv'.split()).to_pandas()
-
-	luck=ascii.read(DATA_FOLDER+'/luck_30pc_gaia1.txt', \
+    luck=ascii.read(DATA_FOLDER+'/luck_30pc_gaia1.txt', \
 	               names='ra              de     [Fe/H]       age1     l_age1    \
 	               u_age1         ra_gaia         de_gaia        plx       eplx      \
 	               pmra      epmra       pmde      epmde         rv   \
 	               erv '.split()).to_pandas()
-
-	casgr=ascii.read(DATA_FOLDER+'/casagrande_30pc_gaia1.txt', \
+                   
+    casgr=ascii.read(DATA_FOLDER+'/casagrande_30pc_gaia1.txt', \
 	                 names='ra              de     [Fe/H]      ageMP     age16P     \
 	                 age84P              ra_gaia              de_gaia        \
 	                 plx       eplx       pmra      epmra       pmde      \
 	                 epmde         rv        erv'.split()).to_pandas()
-	spocs=ascii.read(DATA_FOLDER+'/spocs_30pc_gaia1.txt', \
+    
+    spocs=ascii.read(DATA_FOLDER+'/spocs_30pc_gaia1.txt', \
 	                 names=' ra              de     [Fe/H]       age1     l_age1     u_age1          \
 	                 ra_gaia              de_gaia        plx       eplx       pmra   \
 	                 epmra       pmde      epmde         rv        erv '.split()).to_pandas()
-	luck['pmracosdec']= luck.pmra*np.cos(luck.de*u.degree)
-	bensby['pmracosdec']= bensby.pmra*np.cos(bensby.de*u.degree)
-	spocs['pmracosdec']= spocs.pmra*np.cos(spocs.de*u.degree)
-	casgr['pmracosdec']= casgr.pmra*np.cos(casgr.de*u.degree)
-	comb=pd.concat([bensby, luck, spocs, casgr.rename(columns={'ageMP':'age1'})])
+            
+    luck['pmracosdec']= luck.pmra*np.cos(luck.de*u.degree)
+    bensby['pmracosdec']= bensby.pmra*np.cos(bensby.de*u.degree)
+    spocs['pmracosdec']= spocs.pmra*np.cos(spocs.de*u.degree)
+    casgr['pmracosdec']= casgr.pmra*np.cos(casgr.de*u.degree)
+    
+    data=pd.concat([bensby, luck, spocs, casgr]).rename(columns={'ageBP':'age1'})
+    
+    data_coord, data_pos=get_phase_space(data.ra_gaia.values, data.de_gaia.values, data.pmracosdec.values, data.pmde.values, 1000/data.plx.values, data.rv.values )
+    
+    data['vtot']=((data_coord.transform_to(galcen_frame).v_x**2+data_coord.transform_to(galcen_frame).v_y**2+data_coord.transform_to(galcen_frame).v_z**2)**0.5).value
 
-	return comb
-	                
+
+    data['v_x']=data_coord.transform_to(galcen_frame).v_x.value
+    data['v_y']=data_coord.transform_to(galcen_frame).v_y.value
+    data['v_z']=data_coord.transform_to(galcen_frame).v_z.value
+
+    #compute actions if necessary
+    if use_jz:
+        data_res=compute_actions(data_pos, plot_all_orbit=False)
+        data_actions=np.vstack(data_res[0]['actions'].apply(lambda x: np.array(x)).values)
+        #don't need
+        #data_angles=np.vstack(data_res[0]['angles'].apply(lambda x: np.array(x)).values)
+        #data_freqs=np.vstack(data_res[0]['freqs'].apply(lambda x: np.array(x)).values)
+        data['Jr']=data_actions[:,0]#*1000 #units (kpc$^2$/Myr)
+        data['Jphi']=data_actions[:,1]#*1000 
+        data['Jz']=data_actions[:,2]#*1000
+        
+    return data  
 
 def load_galah_sample():
     from astropy.table import Table
@@ -94,10 +110,6 @@ def load_galah_sample():
                      'fe_h': '[Fe/H]', 
                     'Jz (kpc2/Myr)': 'Jz',
                     'age_bstep': 'age1'})
-        
-def load_precompute_samples():
-    
-    return 
 
 def get_phase_space(ra, dec, pmracosdec, pmdec, distance, rv ):
     """
@@ -153,7 +165,7 @@ def plot_results():
 	pass
 
 
-def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, use_galah=False, plot=False, file_plot=None, file_data=None, export_data=False):
+def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, data_set='galah', plot=False, file_plot=None, file_data=None, export_data=False):
     """
  	source_coord must be a dictionary with the following keywords
  	ra: ra in degree
@@ -170,6 +182,8 @@ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, use_galah=F
  	returns: age and posterior plots
  	uncertainties must be reasonable, not zero
  	"""
+    
+    #compute source coordinate 
     Scoord={'ra':source_coord['ra'], \
               'dec': source_coord['dec'],\
               'pmra':np.random.normal(source_coord['pmra'][0],source_coord['pmra'][1], 1000),
@@ -181,35 +195,18 @@ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, use_galah=F
                        	Scoord['pmra']*np.cos(	Scoord['dec']*u.degree), \
                        	Scoord['pmdec'], 	Scoord['distance'], Scoord['rv'])
 
-    #read in data
-    data= load_schneider_samples()
-    data_coord, data_pos=get_phase_space(data.ra_gaia.values, data.de_gaia.values,\
-                             data.pmracosdec.values, \
-                data.pmde.values, 1000/data.plx.values, data.rv.values )
-    
-    data['vtot']=((data_coord.transform_to(galcen_frame).v_x**2+
-              data_coord.transform_to(galcen_frame).v_y**2+
-              data_coord.transform_to(galcen_frame).v_z**2)**0.5).value
 
-   	#if use jz
+    if data_set=='galah': 
+        data= load_galah_sample()
+
+    if data_set=='schneider': 
+        data=load_schneider_samples(use_jz=use_jz)
+        
+    #if use jz
     total_cut=[]
-    data['v_x']=data_coord.transform_to(galcen_frame).v_x.value
-    data['v_y']=data_coord.transform_to(galcen_frame).v_y.value
-    data['v_z']=data_coord.transform_to(galcen_frame).v_z.value
-
-    if use_galah: data= load_galah_sample()
 
     if use_jz:
-        if not use_galah: #bool to use PRE-COMPUTED GALAH SAMPLE
-	        data_res=compute_actions(data_pos, plot_all_orbit=False)
-	        data_actions=np.vstack(data_res[0]['actions'].apply(lambda x: np.array(x)).values)
 
-	   		#don't need
-			#data_angles=np.vstack(data_res[0]['angles'].apply(lambda x: np.array(x)).values)
-			#data_freqs=np.vstack(data_res[0]['freqs'].apply(lambda x: np.array(x)).values)
-	        data['Jr']=data_actions[:,0]#*1000 #units (kpc$^2$/Myr)
-	        data['Jphi']=data_actions[:,1]#*1000 
-	        data['Jz']=data_actions[:,2]#*1000
         source_res=compute_actions(source_pos, plot_all_orbit=False, alpha=1.)
         source_actions=np.vstack(source_res[0]['actions'].apply(lambda x: np.array(x)).values)
         mean_source_jz= np.nanmedian(source_actions[:,-1])
@@ -227,6 +224,12 @@ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, use_galah=F
     source_total_v=(source_coord.transform_to(galcen_frame).v_x**2+
             source_coord.transform_to(galcen_frame).v_y**2+
                 source_coord.transform_to(galcen_frame).v_z**2)**0.5
+
+    vr= ((source_coord.transform_to(galcen_frame).v_x**2+
+                source_coord.transform_to(galcen_frame).v_y**2)**0.5).value
+                 
+    vz=(source_coord.transform_to(galcen_frame).v_z).value
+
 
    	#compute only kinematics within the velocity ellipse of the star
     kinematic_cut=data.vtot < (np.nanmedian(source_total_v).value)# + nsigma*np.nanmedian(source_total_v).value)
@@ -260,29 +263,33 @@ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, use_galah=F
         #print(data.columns)
         
         fig, ax=plt.subplots(ncols=2, figsize=(12, 4))
-        ax[0].scatter((data.v_x**2+data.v_y**2)**0.5, data.v_z, s=5, alpha=1000/len(data),  c=data.age1, \
+        ax[0].scatter((data.v_x**2+data.v_y**2)**0.5, data.v_z, s=0.1,  c=data.age1, \
 		              marker='+',  cmap='viridis_r', vmin=0, vmax=13)
-            
-        ax[1].scatter(data['[Fe/H]'],  data.v_z, s=5, alpha=1000/len(data),  c=data.age1, \
-		              marker='+',  cmap='viridis_r', vmin=0, vmax=13)
-            
-            
-        vr= ((source_coord.transform_to(galcen_frame).v_x**2+
-            source_coord.transform_to(galcen_frame).v_y**2)**0.5).value
-             
-        vz=(source_coord.transform_to(galcen_frame).v_z).value
 
-        #print (vz, vr)
-        
-        ax[0].errorbar(np.nanmedian(vr), np.nanmedian(vz), xerr=np.nanstd(vr), yerr=np.nanstd(vz), fmt='o', ms=15, c='k')
-        
-        ax[1].errorbar(source_metal[0], np.nanmedian(vz), xerr=source_metal[-1],\
-		           yerr=np.nanstd(vz), marker='o', ms=15, c='k')
-            
-            
+        ax[0].errorbar(np.nanmedian(vr), np.nanmedian(vz), xerr=np.nanstd(vr), \
+            yerr=np.nanstd(vz), fmt='o', ms=15, c='k')
+
         ax[0].set(xlabel=r'$(V_x^2+v_y^2)^{0.5}$ (km/s) ', ylabel=r'$V_z$ (km/s)')
-        ax[1].set(  xlabel='[Fe/H]', \
-		       ylabel=r'V$_z$ (km/s) ')
+
+        #plot Jz instead
+        if use_jz:    
+            ax[1].scatter(data['[Fe/H]'],  data.Jz, s=0.1,  c=data.age1, \
+    		              marker='+',  cmap='viridis_r', vmin=0, vmax=13)
+            ax[1].errorbar(source_metal[0], mean_source_jz, xerr=source_metal[-1],\
+                       yerr=std_source_jz, marker='o', ms=15, c='k')
+            ax[1].set(  xlabel='[Fe/H]', \
+               ylabel=r'J$_z$ (kpc$^2$/Myr) ')
+        
+
+        #plot vertical velocity instead   
+        if not use_jz:
+            ax[1].scatter(data['[Fe/H]'],  data['v_z'], s=0.1,  c=data.age1, \
+                          marker='+',  cmap='viridis_r', vmin=0, vmax=13)
+            ax[1].errorbar(source_metal[0], np.nanmedian(vz), xerr=source_metal[-1],\
+                       yerr=np.nanstd(vz), marker='o', ms=15, c='k')
+            ax[1].set(  xlabel='[Fe/H]', \
+               ylabel=r'V$_z$ (km/s) ')
+        
         
         norm= mpl.colors.Normalize(vmin=0,vmax=13)
         mp=mpl.cm.ScalarMappable(norm=norm, cmap='viridis_r')
