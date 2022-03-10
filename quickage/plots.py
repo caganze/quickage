@@ -1,7 +1,6 @@
 #some constants and pre-made data
 #change for your computer
 
-
 #import some plotting functions
 import seaborn
 seaborn.set_style("ticks")

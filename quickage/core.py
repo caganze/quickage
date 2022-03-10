@@ -20,6 +20,7 @@ import gala.dynamics as gd
 import pandas as pd
 from astropy.io import ascii
 import matplotlib as mpl
+from .plots import seaborn 
 
 #set paths
 CODE_PATH = os.path.abspath(os.path.join(
@@ -99,17 +100,20 @@ def load_schneider_samples(use_jz=False):
         
     return data  
 
+#def load_galah_sample():
+#    from astropy.table import Table
+#    merged_file='/volumes/LaCie/galah_merged.fits'
+#    galah= Table.read(merged_file).to_pandas()
+#    galah['vtot']= (galah['vx_gala (km/s)']**2+galah['vy_gala (km/s)']**2+galah['vz_gala (km/s)']**2)**0.5
+#    return galah.rename(columns={'vx_gala (km/s)': 'v_x', \
+#                      'vy_gala (km/s)': 'v_y',  \
+#                      'vz_gala (km/s)': 'v_z',
+#                     'fe_h': '[Fe/H]', 
+#                    'Jz (kpc2/Myr)': 'Jz',
+#                    'age_bstep': 'age1'})
+
 def load_galah_sample():
-    from astropy.table import Table
-    merged_file='/volumes/LaCie/galah_merged.fits'
-    galah= Table.read(merged_file).to_pandas()
-    galah['vtot']= (galah['vx_gala (km/s)']**2+galah['vy_gala (km/s)']**2+galah['vz_gala (km/s)']**2)**0.5
-    return galah.rename(columns={'vx_gala (km/s)': 'v_x', \
-                      'vy_gala (km/s)': 'v_y',  \
-                      'vz_gala (km/s)': 'v_z',
-                     'fe_h': '[Fe/H]', 
-                    'Jz (kpc2/Myr)': 'Jz',
-                    'age_bstep': 'age1'})
+    return pd.read_csv(DATA_FOLDER+'/galah_lite.csv.gz')
 
 def get_phase_space(ra, dec, pmracosdec, pmdec, distance, rv ):
     """
@@ -161,11 +165,7 @@ def compute_actions(pos, plot_all_orbit=False, alpha=1., print_pericenter=False)
                                                  np.nanstd(u.Quantity(peris))))
     return pd.DataFrame.from_records(result), oplot
 
-def plot_results():
-	pass
-
-
-def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, data_set='galah', plot=False, file_plot=None, file_data=None, export_data=False):
+def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, plot_kde=False, data_set='galah', plot=False, file_plot=None, file_data=None, export_data=False):
     """
  	source_coord must be a dictionary with the following keywords
  	ra: ra in degree
@@ -191,7 +191,7 @@ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, data_set='g
               'distance':np.random.normal(source_coord['distance'][0],source_coord['distance'][1], 1000),
               'rv': np.random.normal(source_coord['rv'][0],source_coord['rv'][1], 1000)}
 
-    source_coord, source_pos=get_phase_space(	Scoord['ra'], 	Scoord['dec'],\
+    source_coord, source_pos=get_phase_space(Scoord['ra'], 	Scoord['dec'],\
                        	Scoord['pmra']*np.cos(	Scoord['dec']*u.degree), \
                        	Scoord['pmdec'], 	Scoord['distance'], Scoord['rv'])
 
@@ -212,6 +212,7 @@ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, data_set='g
         mean_source_jz= np.nanmedian(source_actions[:,-1])
         std_source_jz= np.nanstd(source_actions[:,-1])
    		#forget about angles and frequencies
+        print (mean_source_jz, std_source_jz)
 
    		#compute boolean vertical_actions within uncertainties
         jz_cut= np.logical_and(data.Jz < mean_source_jz+ nsigma* std_source_jz, \
@@ -246,16 +247,22 @@ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, data_set='g
     MEDIAN_AGE=np.nanmedian(data.age1[np.logical_and(selection, nans)])
     STD_AGE=[np.percentile(data.age1[selection].dropna(), 16), \
 	         np.percentile(data.age1[selection].dropna(), 84)]
-
     if plot:
         fig, ax=plt.subplots( figsize=(8, 6))
-        _=ax.hist(data.age1, histtype='step', bins='auto', lw=2, density=True, \
-		          linestyle='--', color='r', label='Full sample')
-        _=ax.hist(data.age1[selection], \
-		              bins='auto', lw=2, density=True, \
-		          linestyle='-', color='k', label='Selected')
+        if not  plot_kde:
+            _=ax.hist(data.age1, histtype='step', bins='auto', lw=3, density=True, \
+                      linestyle='--', color='r', label='Full sample')
+            _=ax.hist(data.age1[selection],  lw=3, density=True, \
+                      linestyle='-', histtype='step', color='k', bins=32, label='Selected')
+        if plot_kde:
+            _= seaborn.kdeplot(data.age1.values, lw=3, linestyle='--', color='r', label='Full sample',\
+             ax=ax, common_grid=True, multiple="stack", alpha=0.5)
+            _= seaborn.kdeplot(data.age1[selection].values, lw=4, linestyle='-', color='k', \
+                label='Selected', ax=ax, common_grid=True,multiple="stack", alpha=0.5)
+
+
         ax.axvspan(STD_AGE[0], STD_AGE[-1], alpha=0.2, color='blue')
-        ax.set(xlabel='Age (Gyr)', ylabel='Probability')
+        ax.set(xlabel='Age (Gyr)', ylabel='Normalized Density')
         plt.legend()
         ax.minorticks_on()
         plt.savefig(file_plot)
@@ -264,7 +271,7 @@ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, data_set='g
         
         fig, ax=plt.subplots(ncols=2, figsize=(12, 4))
         ax[0].scatter((data.v_x**2+data.v_y**2)**0.5, data.v_z, s=0.1,  c=data.age1, \
-		              marker='+',  cmap='viridis_r', vmin=0, vmax=13)
+                      marker='+',  cmap='plasma', vmin=0, vmax=13)
 
         ax[0].errorbar(np.nanmedian(vr), np.nanmedian(vz), xerr=np.nanstd(vr), \
             yerr=np.nanstd(vz), fmt='o', ms=15, c='k')
@@ -273,17 +280,17 @@ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, data_set='g
 
         #plot Jz instead
         if use_jz:    
-            ax[1].scatter(data['[Fe/H]'],  data.Jz, s=0.1,  c=data.age1, \
-    		              marker='+',  cmap='viridis_r', vmin=0, vmax=13)
+            ax[1].scatter(data['[Fe/H]'],  data.Jz, s=0.5,  c=data.age1, \
+                          marker='+',  cmap='plasma', vmin=0, vmax=13)
             ax[1].errorbar(source_metal[0], mean_source_jz, xerr=source_metal[-1],\
                        yerr=std_source_jz, marker='o', ms=15, c='k')
             ax[1].set(  xlabel='[Fe/H]', \
-               ylabel=r'J$_z$ (kpc$^2$/Myr) ')
+               ylabel=r'J$_z$ (kpc$^2$/Myr) ', ylim=[-0.1, 1.1])
         
 
         #plot vertical velocity instead   
         if not use_jz:
-            ax[1].scatter(data['[Fe/H]'],  data['v_z'], s=0.1,  c=data.age1, \
+            ax[1].scatter(data['[Fe/H]'],  data['v_z'], s=0.5,  c=data.age1, \
                           marker='+',  cmap='viridis_r', vmin=0, vmax=13)
             ax[1].errorbar(source_metal[0], np.nanmedian(vz), xerr=source_metal[-1],\
                        yerr=np.nanstd(vz), marker='o', ms=15, c='k')
@@ -300,7 +307,8 @@ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, data_set='g
         for a in ax: a.minorticks_on()
         plt.savefig(file_plot.replace('.', '_scatter_'), rasterized=True, bbox_inches='tight')
 
-    return {'median_age':MEDIAN_AGE,
+
+    return { 'median_age':MEDIAN_AGE,
 			'std_age': (MEDIAN_AGE-STD_AGE[0], STD_AGE[1]-MEDIAN_AGE),
 			'posterior': data.age1[selection].values }
 
