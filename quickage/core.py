@@ -43,7 +43,7 @@ pot=gp.MilkyWayPotential()
 H = gp.Hamiltonian(pot)
 
 
-def load_schneider_samples(use_jz=False):
+def load_schneider_samples(use_jz=False, norbits=100):
     """
 	Read bensby et al, luck et al, cassagrande et al., spocs
     
@@ -142,8 +142,9 @@ def compute_actions(pos, plot_all_orbit=False, alpha=1., print_pericenter=False)
     These are the default paramaters that I used to compute actions on the main samples
 
 	"""
-    orbit=gp.Hamiltonian(pot).integrate_orbit(pos, dt=3*u.Myr, t1=0*u.Myr, \
-                                              t2=2.5*u.Gyr)
+    nsteps=200
+    time_dict= {'t':np.linspace(0*u.Myr, 2.5*u.Gyr, int(nsteps))}
+    orbit=gp.Hamiltonian(pot).integrate_orbit(pos, **time_dict)
     #plot 
     orbit_to_plot=orbit[:,0]
     oplot=None
@@ -165,7 +166,9 @@ def compute_actions(pos, plot_all_orbit=False, alpha=1., print_pericenter=False)
                                                  np.nanstd(u.Quantity(peris))))
     return pd.DataFrame.from_records(result), oplot
 
-def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, plot_kde=False, data_set='galah', plot=False, file_plot=None, file_data=None, export_data=False):
+def estimate_age(source_coord, source_metal, nsigma=3, \
+    select_by=['metallicity', 'velocity', 'jz'], norbits=100,\
+     plot_kde=False, data_set='galah', plot=False, file_plot=None, file_data=None, export_data=False):
     """
  	source_coord must be a dictionary with the following keywords
  	ra: ra in degree
@@ -186,16 +189,16 @@ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, plot_kde=Fa
     #compute source coordinate 
     Scoord={'ra':source_coord['ra'], \
               'dec': source_coord['dec'],\
-              'pmra':np.random.normal(source_coord['pmra'][0],source_coord['pmra'][1], 1000),
-              'pmdec':np.random.normal(source_coord['pmdec'][0],source_coord['pmdec'][1], 1000),
-              'distance':np.random.normal(source_coord['distance'][0],source_coord['distance'][1], 1000),
-              'rv': np.random.normal(source_coord['rv'][0],source_coord['rv'][1], 1000)}
+              'pmra':np.random.normal(source_coord['pmra'][0],source_coord['pmra'][1], int(norbits)),
+              'pmdec':np.random.normal(source_coord['pmdec'][0],source_coord['pmdec'][1], int(norbits)),
+              'distance':np.random.normal(source_coord['distance'][0],source_coord['distance'][1], int(norbits)),
+              'rv': np.random.normal(source_coord['rv'][0],source_coord['rv'][1], int(norbits))}
 
     source_coord, source_pos=get_phase_space(Scoord['ra'], 	Scoord['dec'],\
                        	Scoord['pmra']*np.cos(	Scoord['dec']*u.degree), \
                        	Scoord['pmdec'], 	Scoord['distance'], Scoord['rv'])
 
-
+    use_jz = 'jz' in select_by
     if data_set=='galah': 
         data= load_galah_sample()
 
@@ -207,7 +210,7 @@ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, plot_kde=Fa
 
     if use_jz:
 
-        source_res=compute_actions(source_pos, plot_all_orbit=False, alpha=1.)
+        source_res=compute_actions(source_pos, plot_all_orbit=False)
         source_actions=np.vstack(source_res[0]['actions'].apply(lambda x: np.array(x)).values)
         mean_source_jz= np.nanmedian(source_actions[:,-1])
         std_source_jz= np.nanstd(source_actions[:,-1])
@@ -234,17 +237,21 @@ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, plot_kde=Fa
 
    	#compute only kinematics within the velocity ellipse of the star
     kinematic_cut=data.vtot < (np.nanmedian(source_total_v).value)# + nsigma*np.nanmedian(source_total_v).value)
-    total_cut.append(kinematic_cut)
+    
+    if 'velocity' in select_by:
+        total_cut.append(kinematic_cut)
 
 	#metallicity within n-sigma
     metallicity_cut= np.logical_and(data['[Fe/H]'] > source_metal[0]-nsigma*source_metal[-1],
 									data['[Fe/H]'] < source_metal[0]+nsigma*source_metal[-1])
-    total_cut.append(metallicity_cut)
+
+    if 'metallicity' in select_by:
+        total_cut.append(metallicity_cut)
 
 	#selection
     selection= np.logical_and.reduce(total_cut)
     nans= ~np.isnan(data.age1)
-    MEDIAN_AGE=np.nanmedian(data.age1[np.logical_and(selection, nans)])
+    MEDIAN_AGE=np.nanmedian(data.age1[selection])
     STD_AGE=[np.percentile(data.age1[selection].dropna(), 16), \
 	         np.percentile(data.age1[selection].dropna(), 84)]
     if plot:
@@ -271,7 +278,7 @@ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, plot_kde=Fa
         
         fig, ax=plt.subplots(ncols=2, figsize=(12, 4))
         ax[0].scatter((data.v_x**2+data.v_y**2)**0.5, data.v_z, s=0.1,  c=data.age1, \
-                      marker='+',  cmap='plasma', vmin=0, vmax=13)
+                      marker='+',  cmap='winter', vmin=0, vmax=13)
 
         ax[0].errorbar(np.nanmedian(vr), np.nanmedian(vz), xerr=np.nanstd(vr), \
             yerr=np.nanstd(vz), fmt='o', ms=15, c='k')
@@ -281,7 +288,7 @@ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, plot_kde=Fa
         #plot Jz instead
         if use_jz:    
             ax[1].scatter(data['[Fe/H]'],  data.Jz, s=0.5,  c=data.age1, \
-                          marker='+',  cmap='plasma', vmin=0, vmax=13)
+                          marker='+',  cmap='winter', vmin=0, vmax=13)
             ax[1].errorbar(source_metal[0], mean_source_jz, xerr=source_metal[-1],\
                        yerr=std_source_jz, marker='o', ms=15, c='k')
             ax[1].set(  xlabel='[Fe/H]', \
@@ -291,7 +298,7 @@ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, plot_kde=Fa
         #plot vertical velocity instead   
         if not use_jz:
             ax[1].scatter(data['[Fe/H]'],  data['v_z'], s=0.5,  c=data.age1, \
-                          marker='+',  cmap='viridis_r', vmin=0, vmax=13)
+                          marker='+',  cmap='winter', vmin=0, vmax=13)
             ax[1].errorbar(source_metal[0], np.nanmedian(vz), xerr=source_metal[-1],\
                        yerr=np.nanstd(vz), marker='o', ms=15, c='k')
             ax[1].set(  xlabel='[Fe/H]', \
@@ -299,7 +306,7 @@ def estimate_age(source_coord, source_metal, nsigma=3, use_jz=False, plot_kde=Fa
         
         
         norm= mpl.colors.Normalize(vmin=0,vmax=13)
-        mp=mpl.cm.ScalarMappable(norm=norm, cmap='viridis_r')
+        mp=mpl.cm.ScalarMappable(norm=norm, cmap='winter')
         cax = fig.add_axes([1.01, 0.25, .015, 0.7])
         cbar=plt.colorbar(mp, cax=cax, orientation='vertical')
         cbar.ax.set_ylabel(r'Age (Gyr)', fontsize=18)
