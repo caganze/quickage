@@ -344,8 +344,8 @@ def draw_around(center, condition, data):
     #condition is a dictionary
     booleans=[]
     for k in condition.keys():
-        #exclude the star itself (if it happens to be in the sample) (things within 1 percent)
-        exclude= np.abs(data[k]-center[k]) <= 0.01*np.abs(center[k])
+        #exclude the star itself (if it happens to be in the sample) (things within .1 percent)
+        exclude= np.abs(data[k]-center[k]) <= 0.001*np.abs(center[k])
         booleans.append(~exclude)
         booleans.append(np.abs(data[k]-center[k])<condition[k])
         
