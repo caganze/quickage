@@ -111,11 +111,11 @@ def compute_actions(pos, plot_all_orbit=False, alpha=1., print_pericenter=False)
     return pd.DataFrame.from_records(result), oplot
 
 def estimate_age(source_coord, source_metal, nsigma=3, \
-    select_by=['metallicity', 'velocity', 'jz'], norbits=100,\
+    select_by=['velocity', 'metallicity'], norbits=100,\
      plot_kde=False, data_set='galah', plot=False, volume=None, \
      velocity_volume=None, vertical_volume=None, file_plot=None, file_data=None, 
      export_data=False, weighted=False, \
-     fweights=20, cmap='viridis', vertical_velocity_volume=None):
+     fweights=20, limits_weights=None, cmap='viridis', vertical_velocity_volume=None):
     """
  	source_coord must be a dictionary with the following keywords
  	ra: ra in degree
@@ -129,9 +129,11 @@ def estimate_age(source_coord, source_metal, nsigma=3, \
     velocity_volume: radius velocity volume in distance to select 
  	source_metal: a tuple of [Fe/H] and uncertainty
     fweights: the number of volume steps to consider during weighting
+    limits_weights: dictionary (dmin, dmax, vmin , vmax for age weighing 
     cmap: color map for plotting
 
  	use_jz: keyword to use vertical action as additional constraints
+
 
  	returns: age and posterior plots
  	uncertainties must be reasonable, not zero
@@ -150,11 +152,17 @@ def estimate_age(source_coord, source_metal, nsigma=3, \
                        	Scoord['pmdec'], 	Scoord['distance'], Scoord['rv'])
 
     use_jz = 'jz' in select_by
-    if data_set=='galah': 
-        data= load_sharma_galah_sample()
+    #get data
+    if isinstance(data_set, str):
+        if data_set=='galah': 
+            data= load_sharma_galah_sample()
 
-    if data_set=='schneider': 
-        data=load_schneider_sample()
+        if data_set=='schneider': 
+            data=load_schneider_sample()
+
+    #option to pass custom dataset to bypass reading files
+    if not isinstance(data_set, str):
+        data=data_set
         
     #if use jz
     total_cut=[]
@@ -230,30 +238,30 @@ def estimate_age(source_coord, source_metal, nsigma=3, \
 
 
 	#selection
-    nans= np.isnan(data.age)
+    nans= np.isnan(data.age_bstep)
     total_cut.append(~nans)
     selection= np.logical_and.reduce(total_cut)
-    MEDIAN_AGE=np.nanmedian(data.age.values[selection])
-    STD_AGE=[np.percentile(data.age.values[selection], 16), \
-	         np.percentile(data.age.values[selection], 84)]
+    MEDIAN_AGE=np.nanmedian(data.age_bstep.values[selection])
+    STD_AGE=[np.percentile(data.age_bstep.values[selection], 16), \
+	         np.percentile(data.age_bstep.values[selection], 84)]
 
-    age_samples=data.age[selection].values
+    age_samples=data.age_bstep[selection].values
     age_weights=np.ones_like(age_samples)
 
     if weighted:
         center={'x':source_x, 'y':source_y, 'z':source_z, \
         'v_x': np.nanmedian(vx), 'v_y':np.nanmedian(vy), 'v_z':np.nanmedian(vz)}
-        MEDIAN_AGE,  STD_AGE, age_samples,age_weights =get_volume_weighted_age(center, data, nsteps=fweights)
+        MEDIAN_AGE,  STD_AGE, age_samples,age_weights =get_volume_weighted_age(center, data, nsteps=fweights, limits= limits_weights)
 
     if plot:
         fig, ax=plt.subplots( figsize=(8, 6))
         if not  plot_kde:
-            _=ax.hist(data.age, histtype='step', bins='auto', lw=3, density=True, \
+            _=ax.hist(data.age_bstep, histtype='step', bins='auto', lw=3, density=True, \
                       linestyle='--', color='#AAAAAA', label='Full sample')
             _=ax.hist(age_samples,  lw=3, density=True, \
                       linestyle='-', histtype='step', color='#111111', bins=32, label='Selected', weights=age_weights)
         if plot_kde:
-            _= seaborn.kdeplot(data.age.values, lw=3, linestyle='--', color='#AAAAAA', label='Full sample',\
+            _= seaborn.kdeplot(data.age_bstep.values, lw=3, linestyle='--', color='#AAAAAA', label='Full sample',\
              ax=ax, common_grid=True, multiple="stack", alpha=0.5, cut=0)
             _= seaborn.kdeplot(age_samples, lw=4, linestyle='-', color='#111111', \
                 label='Selected', ax=ax, common_grid=True,multiple="stack", alpha=0.5, cut=0, \
@@ -272,7 +280,7 @@ def estimate_age(source_coord, source_metal, nsigma=3, \
         fig, ax=plt.subplots(ncols=2, figsize=(12, 4))
         #ax[0].scatter(data.v_r, data.v_z, s=0.5,   c='k', \
         #              marker='+',  cmap='winter', vmin=0, vmax=13)
-        ax[0].scatter(data.v_r, data.v_z, s=1.,  alpha=0.1,  c=data.age, \
+        ax[0].scatter(data.v_r, data.v_z, s=1.,  alpha=0.1,  c=data.age_bstep, \
                       marker='+',  cmap=cmap, vmin=0, vmax=13)
 
         ax[0].errorbar(np.nanmedian(vr), np.nanmedian(vz), xerr=np.nanstd(vr), \
@@ -282,7 +290,7 @@ def estimate_age(source_coord, source_metal, nsigma=3, \
 
         #plot Jz instead
         if use_jz:    
-            ax[1].scatter(data['fe_h'],  data.Jz, s=0.5,  c=data.age, \
+            ax[1].scatter(data['fe_h'],  data.Jz, s=0.5,  c=data.age_bstep, \
                           marker='+',  cmap=cmap, vmin=0, vmax=13)
             ax[1].errorbar(source_metal[0], mean_source_jz, xerr=source_metal[-1],\
                        yerr=std_source_jz, marker='o', ms=15, c='k')
@@ -294,7 +302,7 @@ def estimate_age(source_coord, source_metal, nsigma=3, \
         if not use_jz:
             #ax[1].scatter(data['fe_h'],  data['v_z'], s=0.5,  c='k', \
             #              marker='+')
-            ax[1].scatter(data['fe_h'],  data['v_z'], s=0.5, alpha=0.1, c=data.age, \
+            ax[1].scatter(data['fe_h'],  data['v_z'], s=0.5, alpha=0.1, c=data.age_bstep, \
                           marker='+',  cmap=cmap, vmin=0, vmax=13)
             ax[1].errorbar(source_metal[0], np.nanmedian(vz), xerr=source_metal[-1],\
                        yerr=np.nanstd(vz), marker='o', ms=15, c='k')
@@ -336,14 +344,17 @@ def draw_around(center, condition, data):
     #condition is a dictionary
     booleans=[]
     for k in condition.keys():
+        #exclude the star itself (if it happens to be in the sample)
+        exclude= data[k]-center[k]==0
+        booleans.append(exclude)
         booleans.append(np.abs(data[k]-center[k])<condition[k])
         
     comb_bool=np.logical_and.reduce(booleans)
-    med= np.nanmedian(data.age[comb_bool])
-    unc= np.nanstd(data.age[comb_bool])
+    med= np.nanmedian(data.age_bstep[comb_bool])
+    unc= np.nanstd(data.age_bstep[comb_bool])
     return med, unc
 
-def compute_age_around(center, nsteps, data):
+def compute_age_around(center, nsteps, data, dmin=10, dmax=1000, vmin=10, vmax=100):
     """
     center is the star that we want to compute ages around
     additional_cuts are boolean
@@ -351,8 +362,8 @@ def compute_age_around(center, nsteps, data):
     """
     weights=[]
     samples=[]
-    for d in tqdm(np.logspace(1.3, 3, nsteps)): #max 1 kpc, min 20 pc
-        for v in (np.logspace(1.3, 5*np.log10(2), nsteps)): #max 500 km/s, min 20 km/s
+    for d in tqdm(np.logspace(np.log10(dmin), np.log10(dmax), nsteps)): #max 1 kpc, min 20 pc
+        for v in (np.logspace(np.log10(vmin), np.log10(vmax), nsteps)): #max 500 km/s, min 20 km/s
             w=1/(d**3*v**3)
             conds={'x':d,
                'y':d,
@@ -369,8 +380,11 @@ def compute_age_around(center, nsteps, data):
     weights=np.array(weights)/np.nanmax(weights)
     return {'samples': np.array(samples), 'weights': np.array(weights)}
 
-def get_volume_weighted_age(center, data, nsteps=20):
-    res=compute_age_around(center, nsteps, data)
+def get_volume_weighted_age(center, data, nsteps=20, limits=None):
+    #set some defaults
+    if limits==None:
+        limits= {'dmin': 10, 'dmax': 1000, 'vmin': 10, 'vmax': 400}
+    res=compute_age_around(center, nsteps, data, **limits)
     value, unc=weighted_avg_and_std(res['samples'].flatten(), res['weights'])
     return value, [value-unc, value+unc], np.array(res['samples'].flatten()), np.array(res['weights'])
 
@@ -409,7 +423,7 @@ def load_schneider_samples_old(use_jz=False):
     spocs['pmracosdec']= spocs.pmra*np.cos(spocs.de*u.degree)
     casgr['pmracosdec']= casgr.pmra*np.cos(casgr.de*u.degree)
     
-    data=pd.concat([bensby, luck, spocs, casgr]).rename(columns={'ageBP':'age1'})
+    data=pd.concat([bensby, luck, spocs, casgr]).rename(columns={'age1':'age_bstep'})
     
     data_coord, data_pos=get_phase_space(data.ra_gaia.values, data.de_gaia.values, data.pmracosdec.values, data.pmde.values, 1000/data.plx.values, data.rv.values )
     
@@ -434,4 +448,4 @@ def load_schneider_samples_old(use_jz=False):
         data['Jr']=data_actions[:,0]#*1000 #units (kpc$^2$/Myr)
         data['Jphi']=data_actions[:,1]#*1000 
         data['Jz']=data_actions[:,2]#*1000
-    return data.rename(columns={'ageMP': 'age', '[Fe/H]': 'fe_h', 'de': 'dec', 'pmde': 'pmdec'})
+    return data.rename(columns={'[Fe/H]': 'fe_h', 'de': 'dec', 'pmde': 'pmdec'})
