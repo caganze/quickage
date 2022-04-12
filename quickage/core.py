@@ -151,7 +151,7 @@ def estimate_age(source_coord, source_metal, nsigma=3, \
                        	Scoord['pmra']*np.cos(	Scoord['dec']*u.degree), \
                        	Scoord['pmdec'], 	Scoord['distance'], Scoord['rv'])
 
-    use_jz = 'jz' in select_by
+    use_jz = 'actions' in select_by
     #get data
     if isinstance(data_set, str):
         if data_set=='galah': 
@@ -170,13 +170,17 @@ def estimate_age(source_coord, source_metal, nsigma=3, \
     if use_jz:
         source_res=compute_actions(source_pos, plot_all_orbit=False)
         source_actions=np.vstack(source_res[0]['actions'].apply(lambda x: np.array(x)).values)
-        mean_source_jz= np.nanmedian(source_actions[:,-1])
+        mean_source_jr= np.nanmedian(source_actions[:,0])
+        mean_source_lz= np.nanmedian(source_actions[:,1])
+        mean_source_jz= np.nanmedian(source_actions[:,-1]) #conversion from (u.kpc**2/u.Gyr).to(u.km*u.kpc/(u.s))
         std_source_jz= np.nanstd(source_actions[:,-1])
    		#forget about angles and frequencies
+        print ('vertical_action {} +/- {} '.format(mean_source_jz, std_source_jz))
 
    		#compute boolean vertical_actions within uncertainties
-        jz_cut= np.logical_and(data.Jz < mean_source_jz+ nsigma* std_source_jz, \
-        	data.Jz > mean_source_jz- nsigma* std_source_jz)
+        #jz_cut= np.logical_and(data.Jz < mean_source_jz+ nsigma* std_source_jz, \
+        #	data.Jz > mean_source_jz- nsigma* std_source_jz)
+        jz_cut=((data.Jr - mean_source_jr)**2+(data.Jz - mean_source_jz)**2+(data.L_Z - mean_source_lz)**2)**0.5 <10.
         total_cut.append(jz_cut)
 
    	#kinematics, metallicity cuts
@@ -295,7 +299,7 @@ def estimate_age(source_coord, source_metal, nsigma=3, \
             ax[1].errorbar(source_metal[0], mean_source_jz, xerr=source_metal[-1],\
                        yerr=std_source_jz, marker='o', ms=15, c='k')
             ax[1].set(  xlabel='[Fe/H]', \
-               ylabel=r'J$_z$ (kpc$^2$/Myr) ', ylim=[-0.1, 1.1])
+               ylabel=r'J$_z$ (kpc km/s) ', ylim=[-0.1, 1.1])
         
 
         #plot vertical velocity instead   
@@ -323,7 +327,8 @@ def estimate_age(source_coord, source_metal, nsigma=3, \
     return { 'median_age':MEDIAN_AGE,
 			'std_age': (MEDIAN_AGE-STD_AGE[0], STD_AGE[1]-MEDIAN_AGE),
 			'posterior': age_samples,
-            'weights': age_weights }
+            'weights': age_weights,
+            'coords': source_coord.transform_to(galcen_frame)  }
 
 def weighted_avg_and_std(values, weights):
     """
