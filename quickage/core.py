@@ -76,7 +76,7 @@ def get_phase_space(ra, dec, pmracosdec, pmdec, distance, rv ):
     
     return coord, pos
 
-def compute_actions(pos, plot_all_orbit=False, alpha=1., print_pericenter=False):
+def compute_actions(pos, plot_all_orbit=False, alpha=.1, print_pericenter=False):
     """
 	Purpose compute actions based on the orbit of a star
 
@@ -86,21 +86,25 @@ def compute_actions(pos, plot_all_orbit=False, alpha=1., print_pericenter=False)
     These are the default paramaters that I used to compute actions on the main samples
 
 	"""
-    nsteps=300
-    time_dict= {'t':np.linspace(0*u.Myr, 2.5*u.Gyr, int(nsteps))}
+    nsteps=500
+    time_dict= {'t':np.linspace(0*u.Myr, 1.0*u.Gyr, int(nsteps))}
     orbit=gp.Hamiltonian(pot).integrate_orbit(pos, **time_dict)
     #plot 
     orbit_to_plot=orbit[:,0]
     oplot=None
     if plot_all_orbit: 
         orbit_to_plot=orbit
-        oplot=orbit_to_plot.cylindrical.plot( components=['rho', 'z', 'v_z'],  units=[u.pc, u.pc, u.km/u.s] ,alpha=alpha, c='#0074D9')
+        oplot=orbit_to_plot.cylindrical.plot( components=['rho', 'z', 'v_z'],  \
+            units=[u.pc, u.pc, u.km/u.s] ,alpha=alpha, c='#0074D9')
     #documentation: http://gala.adrian.pw/en/latest/dynamics/actionangle.html
     toy_potential = gd.fit_isochrone(orbit[:,0])
-    print (toy_potential)
-    print (np.shape(orbit.z))
-    result = [gd.find_actions(orbit[:,idx], N_max=10, toy_potential=toy_potential) \
-              for idx in tqdm(np.arange(np.shape(orbit)[-1]))]
+    #print (toy_potential)
+    #print (np.shape(orbit.z))
+    #result = [gd.find_actions(orbit[:,idx], N_max=10, toy_potential=toy_potential) \
+    #          for idx in tqdm(np.arange(np.shape(orbit)[-1]))]
+    #new in gala 1.5 
+    result= gd.find_actions(orbit, N_max=10, toy_potential=toy_potential)
+    #print (result)
     if  print_pericenter:
         apos=[orbit[:,idx].apocenter() for idx in tqdm(np.arange(np.shape(orbit)[-1]))]
         peris=[orbit[:,idx].pericenter() for idx in tqdm(np.arange(np.shape(orbit)[-1]))]
@@ -108,14 +112,14 @@ def compute_actions(pos, plot_all_orbit=False, alpha=1., print_pericenter=False)
                                                 np.nanstd(u.Quantity(apos))))
         print ('pericenter --- {} +/- {}'.format(np.nanmedian(u.Quantity(peris)),\
                                                  np.nanstd(u.Quantity(peris))))
-    return pd.DataFrame.from_records(result), oplot
+    return result, oplot
 
 def estimate_age(source_coord, source_metal, nsigma=3, \
     select_by=['velocity', 'metallicity'], norbits=100,\
      plot_kde=False, data_set='galah', plot=False, volume=None, \
      velocity_volume=None, vertical_volume=None, file_plot=None, file_data=None, 
      export_data=False, weighted=False, \
-     fweights=20, limits_weights=None, cmap='viridis', vertical_velocity_volume=None):
+     fweights=20, limits_weights=None, plot_orbits=False, cmap='viridis', vertical_velocity_volume=None):
     """
  	source_coord must be a dictionary with the following keywords
  	ra: ra in degree
@@ -168,19 +172,22 @@ def estimate_age(source_coord, source_metal, nsigma=3, \
     total_cut=[]
 
     if use_jz:
-        source_res=compute_actions(source_pos, plot_all_orbit=False)
-        source_actions=np.vstack(source_res[0]['actions'].apply(lambda x: np.array(x)).values)
-        mean_source_jr= np.nanmedian(source_actions[:,0])
-        mean_source_lz= np.nanmedian(source_actions[:,1])
-        mean_source_jz= np.nanmedian(source_actions[:,-1]) #conversion from (u.kpc**2/u.Gyr).to(u.km*u.kpc/(u.s))
-        std_source_jz= np.nanstd(source_actions[:,-1])
+        source_res=compute_actions(source_pos, plot_all_orbit=plot_orbits)
+        #source_actions=np.vstack(source_res[0]['actions'].apply(lambda x: np.array(x)).values)
+        source_actions= source_res[0]['actions']
+        mean_source_jr= np.nanmedian(source_actions[0])
+        mean_source_lz= np.nanmedian(source_actions[1])
+        mean_source_jz= np.nanmedian(source_actions[-1]) #conversion from (u.kpc**2/u.Gyr).to(u.km*u.kpc/(u.s))
+        std_source_jz= np.nanstd(source_actions[-1])
    		#forget about angles and frequencies
-        print ('vertical_action {} +/- {} '.format(mean_source_jz, std_source_jz))
+        print ('radial action (Jr) {:.5e} +/- {:.5e} kpc km/s'.format(np.nanmedian(source_actions[0]), np.nanstd(source_actions[0])))
+        print ('vertical angular momentum (Lz) {:.5e} +/- {:.5e} kpc km/s'.format(np.nanmedian(source_actions[1]), np.nanstd(source_actions[1])))
+        print ('vertical action (Jz) {:.5e} +/- {:.5e} kpc km/s'.format(mean_source_jz, std_source_jz))
 
    		#compute boolean vertical_actions within uncertainties
         #jz_cut= np.logical_and(data.Jz < mean_source_jz+ nsigma* std_source_jz, \
         #	data.Jz > mean_source_jz- nsigma* std_source_jz)
-        jz_cut=((data.Jr - mean_source_jr)**2+(data.Jz - mean_source_jz)**2+(data.L_Z - mean_source_lz)**2)**0.5 <10.
+        jz_cut=data.Jz < (mean_source_jz+ nsigma* std_source_jz)
         total_cut.append(jz_cut)
 
    	#kinematics, metallicity cuts
@@ -253,9 +260,13 @@ def estimate_age(source_coord, source_metal, nsigma=3, \
     age_weights=np.ones_like(age_samples)
 
     if weighted:
-        center={'x':source_x, 'y':source_y, 'z':source_z, \
-        'v_x': np.nanmedian(vx), 'v_y':np.nanmedian(vy), 'v_z':np.nanmedian(vz)}
-        MEDIAN_AGE,  STD_AGE, age_samples,age_weights =get_volume_weighted_age(center, data, nsteps=fweights, limits= limits_weights)
+        center={'x':source_x, 'y':source_y, 'z':source_z,  'r': (source_x**2+ source_y**2)**0.5,\
+        'v_x': np.nanmedian(vx), 'v_y':np.nanmedian(vy), 'v_z':np.nanmedian(vz), \
+        'v_r': (np.nanmedian(vy)**2+np.nanmedian(vx)**2)**0.5 }
+        MEDIAN_AGE,  STD_AGE, age_samples,age_weights =get_volume_weighted_age(center, data, \
+            nsteps=fweights, limits= limits_weights)
+
+    #print (data.columns)
 
     if plot:
         fig, ax=plt.subplots( figsize=(8, 6))
@@ -323,7 +334,7 @@ def estimate_age(source_coord, source_metal, nsigma=3, \
         for a in ax: a.minorticks_on()
         plt.savefig(file_plot.replace('.', '_scatter_'), rasterized=True, bbox_inches='tight')
 
-
+    print ('Age {:.2f} - {:.2f} + {:.2f} Gyr'.format(MEDIAN_AGE,  MEDIAN_AGE-STD_AGE[0], STD_AGE[1]-MEDIAN_AGE))
     return { 'median_age':MEDIAN_AGE,
 			'std_age': (MEDIAN_AGE-STD_AGE[0], STD_AGE[1]-MEDIAN_AGE),
 			'posterior': age_samples,
@@ -370,11 +381,9 @@ def compute_age_around(center, nsteps, data, dmin=10, dmax=1000, vmin=10, vmax=1
     for d in tqdm(np.logspace(np.log10(dmin), np.log10(dmax), nsteps)): #max 1 kpc, min 20 pc
         for v in (np.logspace(np.log10(vmin), np.log10(vmax), nsteps)): #max 500 km/s, min 20 km/s
             w=1/(d**3*v**3)
-            conds={'x':d,
-               'y':d,
+            conds={'r':d,
                'z':d,
-               'v_x':v,
-               'v_y':v,
+               'v_r':v,
                'v_z':v}
             #if additional_cuts != None:
             #    for k in additional_cuts.keys(): conds[k]=additional_cuts[k]
@@ -387,6 +396,7 @@ def compute_age_around(center, nsteps, data, dmin=10, dmax=1000, vmin=10, vmax=1
 
 def get_volume_weighted_age(center, data, nsteps=20, limits=None):
     #set some defaults
+    data['r']= (data['x']**2+ data['y']**2)**0.5
     if limits==None:
         limits= {'dmin': 10, 'dmax': 1000, 'vmin': 10, 'vmax': 400}
     res=compute_age_around(center, nsteps, data, **limits)
@@ -442,12 +452,13 @@ def load_schneider_samples_old(use_jz=False):
     data['x']=data_coord.transform_to(galcen_frame).x.to(u.pc).value
     data['y']=data_coord.transform_to(galcen_frame).y.to(u.pc).value
     data['z']=data_coord.transform_to(galcen_frame).z.to(u.pc).value
+    data['r']= (data.x**2 + data.y**2)**0.5
 
     #compute actions if necessary
     if use_jz:
         data_res=compute_actions(data_pos, plot_all_orbit=False)
-        data_actions=np.vstack(data_res[0]['actions'].apply(lambda x: np.array(x)).values)
-        #don't need
+        #data_actions=np.vstack(data_res[0]['actions'].apply(lambda x: np.array(x)).values)
+        data_actions= data_res[0]['actions']
         #data_angles=np.vstack(data_res[0]['angles'].apply(lambda x: np.array(x)).values)
         #data_freqs=np.vstack(data_res[0]['freqs'].apply(lambda x: np.array(x)).values)
         data['Jr']=data_actions[:,0]#*1000 #units (kpc$^2$/Myr)
