@@ -305,12 +305,12 @@ def estimate_age(source_coord, source_metal, nsigma=3, \
 
         #plot Jz instead
         if use_jz:    
-            ax[1].scatter(data['fe_h'],  data.Jz, s=0.5,  c=data.age_bstep, \
+            ax[1].scatter(data.v_z,  data.Jz, s=1, alpha=0.1,  c=data.age_bstep, \
                           marker='+',  cmap=cmap, vmin=0, vmax=13)
-            ax[1].errorbar(source_metal[0], mean_source_jz, xerr=source_metal[-1],\
-                       yerr=std_source_jz, marker='o', ms=15, c='k')
-            ax[1].set(  xlabel='[Fe/H]', \
-               ylabel=r'J$_z$ (kpc km/s) ', ylim=[-0.1, 1.1])
+            ax[1].errorbar(np.nanmedian(vz), mean_source_jz, xerr=np.nanstd(vz),\
+                       yerr=std_source_jz, marker='o', ms=20, c='k', alpha=1)
+            ax[1].set(  xlabel='V$_z$ (km/s)', \
+               ylabel=r'J$_z$ (kpc km/s) ',  yscale='log', ylim=[1e-1, 1e3], xlim=[-400, 400])
         
 
         #plot vertical velocity instead   
@@ -320,9 +320,9 @@ def estimate_age(source_coord, source_metal, nsigma=3, \
             ax[1].scatter(data['fe_h'],  data['v_z'], s=0.5, alpha=0.1, c=data.age_bstep, \
                           marker='+',  cmap=cmap, vmin=0, vmax=13)
             ax[1].errorbar(source_metal[0], np.nanmedian(vz), xerr=source_metal[-1],\
-                       yerr=np.nanstd(vz), marker='o', ms=15, c='k')
+                       yerr=np.nanstd(vz), marker='o', ms=20, c='k')
             ax[1].set(  xlabel='[Fe/H]', \
-               ylabel=r'V$_z$ (km/s) ', ylim=[-500, 500])
+               ylabel=r'V$_z$ (km/s) ', ylim=[-400, 400])
         
         
         norm= mpl.colors.Normalize(vmin=0,vmax=13)
@@ -334,7 +334,7 @@ def estimate_age(source_coord, source_metal, nsigma=3, \
         for a in ax: a.minorticks_on()
         plt.savefig(file_plot.replace('.', '_scatter_'), rasterized=True, bbox_inches='tight')
 
-    print ('Age {:.2f} - {:.2f} + {:.2f} Gyr'.format(MEDIAN_AGE,  MEDIAN_AGE-STD_AGE[0], STD_AGE[1]-MEDIAN_AGE))
+    print ('Age: {:.2f} -{:.2f} +{:.2f} Gyr'.format(MEDIAN_AGE,  MEDIAN_AGE-STD_AGE[0], STD_AGE[1]-MEDIAN_AGE))
     return { 'median_age':MEDIAN_AGE,
 			'std_age': (MEDIAN_AGE-STD_AGE[0], STD_AGE[1]-MEDIAN_AGE),
 			'posterior': age_samples,
