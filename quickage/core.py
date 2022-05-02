@@ -308,7 +308,7 @@ def estimate_age(source_coord, source_metal, nsigma=3, \
             ax[1].scatter(data.v_z,  data.Jz, s=1, alpha=0.1,  c=data.age_bstep, \
                           marker='+',  cmap=cmap, vmin=0, vmax=13)
             ax[1].errorbar(np.nanmedian(vz), mean_source_jz, xerr=np.nanstd(vz),\
-                       yerr=std_source_jz, marker='o', ms=20, c='k', alpha=1)
+                       yerr=std_source_jz, marker='o', ms=100, c='k', alpha=1)
             ax[1].set(  xlabel='V$_z$ (km/s)', \
                ylabel=r'J$_z$ (kpc km/s) ',  yscale='log', ylim=[1e-1, 1e3], xlim=[-400, 400])
         
