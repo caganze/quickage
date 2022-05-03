@@ -252,12 +252,21 @@ def estimate_age(source_coord, source_metal, nsigma=3, \
     nans= np.isnan(data.age_bstep)
     total_cut.append(~nans)
     selection= np.logical_and.reduce(total_cut)
-    MEDIAN_AGE=np.nanmedian(data.age_bstep.values[selection])
-    STD_AGE=[np.percentile(data.age_bstep.values[selection], 16), \
-	         np.percentile(data.age_bstep.values[selection], 84)]
 
-    age_samples=data.age_bstep[selection].values
+    MEDIAN_AGE= np.nan
+    STD_AGE=np.nan
+    age_samples=data.age_bstep.values
     age_weights=np.ones_like(age_samples)
+
+    if len(data.age_bstep.values[selection]) ==0:
+        print ('No stars match criteria please choose a larger volume')
+
+    if len(data.age_bstep.values[selection]) >0:
+        MEDIAN_AGE=np.nanmedian(data.age_bstep.values[selection])
+        STD_AGE=[np.percentile(data.age_bstep.values[selection], 16), \
+    	         np.percentile(data.age_bstep.values[selection], 84)]
+        age_samples=data.age_bstep[selection].values
+        age_weights=np.ones_like(age_samples)
 
     if weighted:
         center={'x':source_x, 'y':source_y, 'z':source_z,  'r': (source_x**2+ source_y**2)**0.5,\
@@ -307,8 +316,8 @@ def estimate_age(source_coord, source_metal, nsigma=3, \
         if use_jz:    
             ax[1].scatter(data.v_z,  data.Jz, s=1, alpha=0.1,  c=data.age_bstep, \
                           marker='+',  cmap=cmap, vmin=0, vmax=13)
-            ax[1].errorbar(np.nanmedian(vz), mean_source_jz, xerr=np.nanstd(vz),\
-                       yerr=std_source_jz, marker='o', ms=100, c='k', alpha=1)
+            ax[1].errorbar(np.nanmedian(vz), np.abs(mean_source_jz), xerr=np.nanstd(vz),\
+                       yerr=np.abs(std_source_jz), marker='o', ms=15, c='k', alpha=1)
             ax[1].set(  xlabel='V$_z$ (km/s)', \
                ylabel=r'J$_z$ (kpc km/s) ',  yscale='log', ylim=[1e-1, 1e3], xlim=[-400, 400])
         
