@@ -297,7 +297,7 @@ def estimate_age(source_coord, source_metal, nsigma=3, \
         ax.set(xlabel='Age (Gyr)', ylabel='Normalized Density')
         plt.legend()
         ax.minorticks_on()
-        plt.savefig(file_plot)
+        plt.savefig(file_plot, bbox_inches='tight')
 
         #print(data.columns)
         
@@ -341,7 +341,7 @@ def estimate_age(source_coord, source_metal, nsigma=3, \
         cbar.ax.set_ylabel(r'Age (Gyr)', fontsize=18)
         plt.tight_layout()
         for a in ax: a.minorticks_on()
-        plt.savefig(file_plot.replace('.', '_scatter_'), rasterized=True, bbox_inches='tight')
+        plt.savefig(file_plot+'_scatter.jpeg', rasterized=True, bbox_inches='tight')
 
     print ('Age: {:.2f} -{:.2f} +{:.2f} Gyr'.format(MEDIAN_AGE,  MEDIAN_AGE-STD_AGE[0], STD_AGE[1]-MEDIAN_AGE))
     return { 'median_age':MEDIAN_AGE,
