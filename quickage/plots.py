@@ -39,8 +39,8 @@ mpl.rcParams['ytick.labelsize'] = 18
 mpl.rcParams['legend.fontsize'] = 18
 mpl.rcParams['figure.titlesize'] = 18
 
-font = {'family' : 'serif',
-        'serif':[],
+font = {#'family' : 'serif',
+        #'serif':[],
         'weight' : 'normal',
         'size'   : 18}
 mpl.rc('font', **font)

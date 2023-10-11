@@ -119,7 +119,8 @@ def estimate_age(source_coord, source_metal, nsigma=3, \
      plot_kde=False, data_set='galah', plot=False, volume=None, \
      velocity_volume=None, vertical_volume=None, file_plot=None, file_data=None, 
      export_data=False, weighted=False, \
-     fweights=20, limits_weights=None, plot_orbits=False, cmap='viridis', vertical_velocity_volume=None):
+     fweights=20, limits_weights=None, plot_orbits=False, cmap='viridis', vertical_velocity_volume=None,
+     prior=None):
     """
  	source_coord must be a dictionary with the following keywords
  	ra: ra in degree
@@ -247,6 +248,10 @@ def estimate_age(source_coord, source_metal, nsigma=3, \
         vert_volume_cut= (source_z-data.z)**2 < vertical_volume**2
         total_cut.append(vert_volume_cut)
 
+    if prior is not None:
+        total_cut.append(data.age_bstep > prior[0])
+        total_cut.append(data.age_bstep < prior[1])
+
 
 	#selection
     nans= np.isnan(data.age_bstep)
@@ -278,18 +283,18 @@ def estimate_age(source_coord, source_metal, nsigma=3, \
     #print (data.columns)
 
     if plot:
+        print (age_samples)
         fig, ax=plt.subplots( figsize=(8, 6))
         if not  plot_kde:
             _=ax.hist(data.age_bstep, histtype='step', bins='auto', lw=3, density=True, \
                       linestyle='--', color='#AAAAAA', label='Full sample')
             _=ax.hist(age_samples,  lw=3, density=True, \
-                      linestyle='-', histtype='step', color='#111111', bins=32, label='Selected', weights=age_weights)
+                      linestyle='-', histtype='step', color='#111111', bins=32, label='Selected')# weights=age_weights)
         if plot_kde:
             _= seaborn.kdeplot(data.age_bstep.values, lw=3, linestyle='--', color='#AAAAAA', label='Full sample',\
              ax=ax, common_grid=True, multiple="stack", alpha=0.5, cut=0)
             _= seaborn.kdeplot(age_samples, lw=4, linestyle='-', color='#111111', \
-                label='Selected', ax=ax, common_grid=True,multiple="stack", alpha=0.5, cut=0, \
-                weights=age_weights)
+                label='Selected', ax=ax, common_grid=True,multiple="stack", alpha=0.5, cut=0)# #weights=age_weights)
 
 
         ax.axvspan(STD_AGE[0], STD_AGE[-1], alpha=0.2, color='#01FF70')
@@ -341,7 +346,7 @@ def estimate_age(source_coord, source_metal, nsigma=3, \
         cbar.ax.set_ylabel(r'Age (Gyr)', fontsize=18)
         plt.tight_layout()
         for a in ax: a.minorticks_on()
-        plt.savefig(file_plot+'_scatter.jpeg', rasterized=True, bbox_inches='tight')
+        plt.savefig(file_plot+'_scatter.jpeg', bbox_inches='tight')
 
     print ('Age: {:.2f} -{:.2f} +{:.2f} Gyr'.format(MEDIAN_AGE,  MEDIAN_AGE-STD_AGE[0], STD_AGE[1]-MEDIAN_AGE))
     return { 'median_age':MEDIAN_AGE,
